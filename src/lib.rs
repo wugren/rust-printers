@@ -46,7 +46,8 @@ mod unix;
 #[cfg(target_family = "windows")]
 mod windows;
 
-use common::{base::printer::Printer, traits::platform::PlatformActions};
+use common::{traits::platform::PlatformActions};
+pub use common::base::printer::Printer;
 
 /**
  * Return all available printers on a system
