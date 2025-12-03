@@ -3,6 +3,21 @@ use crate::common::base::{
     printer::{Printer, PrinterState},
 };
 use std::time::SystemTime;
+use image::DynamicImage;
+
+#[derive(Clone)]
+pub struct DeviceCaps {
+    pub dpi_x: i32,
+    pub dpi_y: i32,
+    pub page_width: i32,
+    pub page_height: i32,
+    pub print_table_width: i32,
+    pub print_table_height: i32,
+    pub margin_top: i32,
+    pub margin_left: i32,
+    pub margin_right: i32,
+    pub margin_bottom: i32,
+}
 
 pub trait PlatformPrinterGetters {
     fn get_name(&self) -> String;
@@ -18,6 +33,7 @@ pub trait PlatformPrinterGetters {
     fn get_processor(&self) -> String;
     fn get_description(&self) -> String;
     fn get_data_type(&self) -> String;
+    fn get_device_caps(&self) -> DeviceCaps;
 }
 
 pub trait PlatformPrinterJobGetters {
@@ -42,6 +58,12 @@ pub trait PlatformActions {
         printer_system_name: &str,
         file_path: &str,
         options: PrinterJobOptions,
+    ) -> Result<u64, &'static str>;
+    fn print_image(
+        printer_system_name: &str,
+        buffer: DynamicImage,
+        print_name: Option<&str>,
+        page_count: u32,
     ) -> Result<u64, &'static str>;
     fn get_printer_jobs(
         printer_name: &str,

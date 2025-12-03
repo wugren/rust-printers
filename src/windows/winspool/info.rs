@@ -3,7 +3,10 @@
 
 use libc::{c_int, c_uint, c_ulong, c_void, wchar_t};
 use std::{ptr, slice};
-
+use windows::core::{PCWSTR, PWSTR};
+use windows::Win32::Graphics::Gdi::{CreateDCW, DeleteDC, GetDeviceCaps, DEVMODEW, HORZRES, LOGPIXELSX, LOGPIXELSY, PHYSICALHEIGHT, PHYSICALOFFSETX, PHYSICALOFFSETY, PHYSICALWIDTH, VERTRES};
+use windows::Win32::Graphics::Printing::{EnumPrintersW, GetDefaultPrinterW, PRINTER_INFO_2W};
+use windows::Win32::Storage::Xps::{DeviceCapabilitiesW, DC_FIELDS, DC_ORIENTATION, DC_PAPERS, DC_SIZE, PRINTER_DEVICE_CAPABILITIES};
 use crate::{
     common::traits::platform::PlatformPrinterGetters,
     windows::utils::{
@@ -11,53 +14,8 @@ use crate::{
         strings::{str_to_wide_string, wchar_t_to_string},
     },
 };
-
-#[link(name = "winspool")]
-unsafe extern "system" {
-
-    fn EnumPrintersW(
-        Flags: c_ulong,
-        Name: *const wchar_t,
-        Level: c_uint,
-        pPrinterEnum: *mut PRINTER_INFO_2W,
-        cbBuf: c_ulong,
-        pcbNeeded: *mut c_ulong,
-        pcReturned: *mut c_ulong,
-    ) -> c_int;
-
-    fn GetDefaultPrinterW(pszBuffer: *mut wchar_t, pcchBuffer: *mut c_ulong) -> c_int;
-
-}
-
-/**
- * The winspool PRINTER_INFO_2 structure specifies detailed printer information.
- * https://learn.microsoft.com/en/windows/win32/printdocs/printer-info-2
- */
-#[derive(Debug, Clone)]
-#[repr(C)]
-pub struct PRINTER_INFO_2W {
-    pServerName: *mut wchar_t,
-    pub pPrinterName: *mut wchar_t,
-    pShareName: *mut wchar_t,
-    pPortName: *mut wchar_t,
-    pDriverName: *mut wchar_t,
-    pComment: *mut wchar_t,
-    pLocation: *mut wchar_t,
-    pDevMode: *mut c_void,
-    pSepFile: *mut wchar_t,
-    pPrintProcessor: *mut wchar_t,
-    pDatatype: *mut wchar_t,
-    pParameters: *mut wchar_t,
-    pSecurityDescriptor: *mut c_void,
-    Attributes: c_ulong,
-    Priority: c_ulong,
-    DefaultPriority: c_ulong,
-    StartTime: c_ulong,
-    UntilTime: c_ulong,
-    Status: c_ulong,
-    cJobs: c_ulong,
-    AveragePPM: c_ulong,
-}
+use crate::common::base::printer::Printer;
+use crate::common::traits::platform::DeviceCaps;
 
 impl PlatformPrinterGetters for PRINTER_INFO_2W {
     fn get_name(&self) -> String {
@@ -66,10 +24,10 @@ impl PlatformPrinterGetters for PRINTER_INFO_2W {
     fn get_is_default(&self) -> bool {
         let mut name_size: c_ulong = 0;
         unsafe {
-            GetDefaultPrinterW(ptr::null_mut(), &mut name_size);
-            let mut buffer: Vec<wchar_t> = vec![0; name_size as usize];
-            GetDefaultPrinterW(buffer.as_mut_ptr(), &mut name_size);
-            *self.pPrinterName == *buffer.as_ptr()
+            GetDefaultPrinterW(None, &mut name_size);
+            let mut buffer: Vec<u16> = vec![0; name_size as usize];
+            GetDefaultPrinterW(Some(PWSTR(buffer.as_mut_ptr())), &mut name_size);
+            wchar_t_to_string(self.pPrinterName) == wchar_t_to_string(PWSTR(buffer.as_mut_ptr()))
         }
     }
     fn get_system_name(&self) -> String {
@@ -137,15 +95,52 @@ impl PlatformPrinterGetters for PRINTER_INFO_2W {
         .map(|v| v.1.to_string())
         .collect();
     }
+
+    fn get_device_caps(&self) -> DeviceCaps {
+        get_device_caps(self.get_name().as_str())
+    }
+}
+
+//获取打印机的dpi
+pub fn get_device_caps(printer_name: &str) -> DeviceCaps {
+    let printer_name_wide = str_to_wide_string(printer_name);
+    let device = str_to_wide_string("WINSPOOL");
+    let device_name = PCWSTR(printer_name_wide.as_ptr());
+    let port_name = PCWSTR::null(); // 使用默认端口
+    unsafe {
+        let hdc = CreateDCW(PCWSTR(device.as_ptr()), device_name, port_name, None);
+        let dpi_x = GetDeviceCaps(Some(hdc), LOGPIXELSX);  // 水平 DPI
+        let dpi_y = GetDeviceCaps(Some(hdc), LOGPIXELSY);
+        let page_width = GetDeviceCaps(Some(hdc), PHYSICALWIDTH);
+        let page_height = GetDeviceCaps(Some(hdc), PHYSICALHEIGHT);
+        let print_table_width = GetDeviceCaps(Some(hdc), HORZRES);
+        let print_table_height = GetDeviceCaps(Some(hdc), VERTRES);
+        let margin_left = GetDeviceCaps(Some(hdc), PHYSICALOFFSETX);
+        let margin_top = GetDeviceCaps(Some(hdc), PHYSICALOFFSETY);
+        let margin_right = page_width - print_table_width - margin_left;
+        let margin_bottom = page_height - print_table_height - margin_top;
+        DeleteDC(hdc);
+        DeviceCaps {
+            dpi_x,
+            dpi_y,
+            page_width,
+            page_height,
+            print_table_width,
+            print_table_height,
+            margin_top,
+            margin_left,
+            margin_right,
+            margin_bottom,
+        }
+    }
 }
 
 /**
  * Returns all available printer using EnumPrintersW
  */
-pub fn enum_printers(name: Option<&str>) -> &'static [PRINTER_INFO_2W] {
-    let mut bytes_needed: c_ulong = 0;
-    let mut count_printers: c_ulong = 0;
-    let mut buffer_ptr: *mut PRINTER_INFO_2W = ptr::null_mut();
+pub fn enum_printers(name: Option<&str>) -> Vec<Printer> {
+    let mut bytes_needed: u32 = 0;
+    let mut count_printers: u32 = 0;
 
     // Store wide name in a variable so it lives long enough
     let name_wide: Option<Vec<u16>> = name.map(str_to_wide_string);
@@ -154,41 +149,57 @@ pub fn enum_printers(name: Option<&str>) -> &'static [PRINTER_INFO_2W] {
         None => ptr::null(),
     };
 
-    for _ in 0..2 {
-        let result = unsafe {
-            EnumPrintersW(
-                0x00000002 | 0x00000004,
-                name_ptr as *const wchar_t,
-                2,
-                buffer_ptr,
-                bytes_needed,
-                &mut bytes_needed,
-                &mut count_printers,
-            )
-        };
+    let result = unsafe {
+        EnumPrintersW(
+            0x00000002 | 0x00000004,
+            PCWSTR(name_ptr),
+            2,
+            None,
+            &mut bytes_needed,
+            &mut count_printers,
+        )
+    };
 
-        if result != 0 || bytes_needed == 0 {
-            break;
-        }
-
-        buffer_ptr = alloc_s::<PRINTER_INFO_2W>(bytes_needed);
+    if result.is_ok() || bytes_needed == 0 {
+        return vec![];
     }
 
-    unsafe { slice::from_raw_parts(buffer_ptr, count_printers as usize) }
+    let mut buffer = vec![0u8; bytes_needed as usize];
+
+    let result = unsafe {
+        EnumPrintersW(
+            0x00000002 | 0x00000004,
+            PCWSTR(name_ptr),
+            2,
+            Some(buffer.as_mut()),
+            &mut bytes_needed,
+            &mut count_printers,
+        )
+    };
+    if result.is_err() {
+        return vec![];
+    }
+
+
+    let printers = unsafe {
+        slice::from_raw_parts(buffer.as_ptr() as *const PRINTER_INFO_2W, count_printers as usize)
+    };
+    printers.iter().map(|p| Printer::from_platform_printer_getters(p)).collect()
 }
 
+pub fn get_default_printer_name() -> String {
+    let mut name_size: u32 = 0;
+    unsafe {
+        GetDefaultPrinterW(None, &mut name_size);
+        let mut buffer: Vec<u16> = vec![0; name_size as usize];
+        GetDefaultPrinterW(Some(PWSTR(buffer.as_mut_ptr())), &mut name_size);
+        wchar_t_to_string(PWSTR(buffer.as_mut_ptr()))
+    }
+}
 /**
  * Returns the default printer filtering all printers
  */
-pub fn get_default_printer() -> Option<&'static PRINTER_INFO_2W> {
-    enum_printers(None).iter().find(|p| p.get_is_default())
-}
-
-/**
- * Free winspool printer memory
- */
-pub fn free(printers: &'static [PRINTER_INFO_2W]) {
-    if printers.len() > 0 {
-        dealloc_s::<PRINTER_INFO_2W>(printers.as_ptr());
-    }
+pub fn get_default_printer() -> Option<Printer> {
+    let printer_name = get_default_printer_name();
+    enum_printers(None).into_iter().find(|p| p.name == printer_name)
 }

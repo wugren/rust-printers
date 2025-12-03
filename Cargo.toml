@@ -13,8 +13,23 @@ readme = "README.md"
 
 [dependencies]
 libc = "0.2.172"
+image = "0.25"
 
 [lib]
 name = "printers"
 path = "src/lib.rs"
 bench = false
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Storage_Xps",
+    "Win32_System_SystemServices",
+    "Win32_UI_Controls",
+    "Win32_System_Com",
+    "Win32_Graphics_Printing",
+    "Win32_Security",
+] }

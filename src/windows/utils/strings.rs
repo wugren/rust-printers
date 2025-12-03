@@ -1,6 +1,6 @@
-use libc::wchar_t;
+use windows::core::PWSTR;
 
-pub fn wchar_t_to_string(value: *const wchar_t) -> String {
+pub fn wchar_t_to_string(value: PWSTR) -> String {
     if value.is_null() {
         return "".to_string();
     }
@@ -8,8 +8,8 @@ pub fn wchar_t_to_string(value: *const wchar_t) -> String {
     let mut vec: Vec<u16> = Vec::new();
     let mut i = 0;
     unsafe {
-        while *value.offset(i) != 0 {
-            vec.push(*value.offset(i) as u16);
+        while *value.0.offset(i) != 0 {
+            vec.push(*value.0.offset(i) as u16);
             i += 1;
         }
     }

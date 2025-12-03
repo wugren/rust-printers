@@ -1,6 +1,6 @@
 use cups::dests::get_dests;
 use std::str;
-
+use image::DynamicImage;
 use crate::common::{
     base::{
         job::{PrinterJob, PrinterJobOptions, PrinterJobState},
@@ -50,6 +50,15 @@ impl PlatformActions for crate::Platform {
         )
     }
 
+    fn print_image(
+        printer_system_name: &str,
+        buffer: DynamicImage,
+        print_name: Option<&str>,
+        page_count: u32,
+    ) -> Result<u64, &'static str> {
+        todo!()
+    }
+    
     fn get_printer_jobs(printer_name: &str, active_only: bool) -> Vec<PrinterJob> {
         cups::jobs::get_printer_jobs(printer_name, active_only)
             .unwrap_or_default()

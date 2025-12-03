@@ -1,111 +1,18 @@
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
 
-use libc::{c_int, c_ulong, c_ushort, c_void, wchar_t};
-use std::{ffi::c_char, ptr, slice};
-
+use libc::{ c_ulong, c_void};
+use std::{slice};
+use windows::core::{BOOL, PCWSTR, PWSTR};
+use windows::Win32::Graphics::Printing::*;
 use crate::{
     common::traits::platform::PlatformPrinterJobGetters,
     windows::utils::{
         date::{calculate_system_time, get_current_epoch},
-        memory::alloc_s,
         strings::{str_to_wide_string, wchar_t_to_string},
     },
 };
-
-#[link(name = "winspool")]
-unsafe extern "system" {
-    fn OpenPrinterW(
-        pPrinterName: *const wchar_t,
-        phPrinter: *mut *mut c_void,
-        pDefault: *mut PrinterDefaultW,
-    ) -> c_int;
-    fn StartDocPrinterW(
-        hPrinter: *mut c_void,
-        Level: c_ulong,
-        pDocInfo: *const DocInfo1,
-    ) -> c_ulong;
-    fn StartPagePrinter(hPrinter: *mut c_void) -> c_int;
-    fn WritePrinter(
-        hPrinter: *mut c_void,
-        pBuf: *mut c_void,
-        cbBuf: c_ulong,
-        pcWritten: *mut c_ulong,
-    ) -> c_int;
-    fn EndPagePrinter(hPrinter: *mut c_void) -> c_int;
-    fn EndDocPrinter(hPrinter: *mut c_void) -> c_int;
-    fn ClosePrinter(hPrinter: *mut c_void) -> c_int;
-    fn EnumJobsW(
-        hPrinter: *mut c_void,
-        firstJob: c_ulong,
-        noJobs: c_ulong,
-        level: c_ulong,
-        pJob: *mut c_void,
-        cbBuf: c_ulong,
-        pcbNeeded: *mut c_ulong,
-        pcReturned: *mut c_ulong,
-    ) -> c_int;
-    fn SetJobW(
-        hPrinter: *mut c_void,
-        JobId: c_ulong,
-        Level: c_ulong,
-        pJob: *mut c_char,
-        Command: c_ulong,
-    ) -> c_int;
-}
-
-#[repr(C)]
-struct PrinterDefaultW {
-    pDatatype: *mut wchar_t,
-    pDevMode: *mut c_void,
-    DesiredAccess: c_ulong,
-}
-
-#[repr(C)]
-struct DocInfo1 {
-    pDocName: *mut wchar_t,
-    pOutputFile: *mut wchar_t,
-    pDatatype: *mut wchar_t,
-}
-
-/**
- * Specifies a date and time, using individual members for the month, day, year, weekday, hour, minute, second, and millisecond.
- * https://learn.microsoft.com/en-us/windows/win32/api/minwinbase/ns-minwinbase-systemtime
- */
-#[derive(Debug, Clone)]
-#[repr(C)]
-pub struct SYSTEMTIME {
-    pub wYear: c_ushort,
-    pub wMonth: c_ushort,
-    pub wDayOfWeek: c_ushort,
-    pub wDay: c_ushort,
-    pub wHour: c_ushort,
-    pub wMinute: c_ushort,
-    pub wSecond: c_ushort,
-    pub wMilliseconds: c_ushort,
-}
-
-/**
- * The JOB_INFO_1 structure specifies print-job information.
- * https://learn.microsoft.com/en-us/windows/win32/printdocs/job-info-1
- */
-#[derive(Debug, Clone)]
-#[repr(C)]
-pub struct JOB_INFO_1W {
-    JobId: c_ulong,
-    pPrinterName: *mut wchar_t,
-    pMachineName: *mut wchar_t,
-    pUserName: *mut wchar_t,
-    pDocument: *mut wchar_t,
-    pDatatype: *mut wchar_t,
-    pStatus: *mut wchar_t,
-    Status: c_ulong,
-    Priority: c_ulong,
-    Position: c_ulong,
-    TotalPages: c_ulong,
-    PagesPrinted: c_ulong,
-    Submitted: SYSTEMTIME,
-}
+use crate::common::base::job::PrinterJob;
 
 impl PlatformPrinterJobGetters for JOB_INFO_1W {
     fn get_id(&self) -> u64 {
@@ -154,20 +61,22 @@ impl PlatformPrinterJobGetters for JOB_INFO_1W {
  */
 fn open_printer(printer_name: &str) -> Result<*mut c_void, &'static str> {
     let printer_name = str_to_wide_string(printer_name);
-    let mut printer_handle: *mut c_void = ptr::null_mut();
+    let mut printer_handle = PRINTER_HANDLE::default();
 
-    return if unsafe {
+    match unsafe {
         OpenPrinterW(
-            printer_name.as_ptr() as *const wchar_t,
+            PCWSTR(printer_name.as_ptr()),
             &mut printer_handle,
-            ptr::null_mut(),
+            None
         )
-    } == 0
-    {
-        Err("OpenPrinterW failed")
-    } else {
-        Ok(printer_handle)
-    };
+    } {
+        Ok(()) => {
+            Ok(printer_handle.Value)
+        }
+        Err(_) => {
+            Err("OpenPrinterW failed")
+        }
+    }
 }
 
 /**
@@ -184,6 +93,9 @@ pub fn print_buffer(
         if let Err(err) = printer_handle {
             return Err(err);
         }
+        let printer_handle = PRINTER_HANDLE {
+            Value: printer_handle.unwrap()
+        };
 
         let mut copies = 1;
         let mut data_type = "RAW";
@@ -200,33 +112,33 @@ pub fn print_buffer(
         let mut pDocName =
             str_to_wide_string(job_name.unwrap_or(get_current_epoch().to_string().as_str()));
 
-        let doc_info = DocInfo1 {
-            pDocName: pDocName.as_mut_ptr() as *mut wchar_t,
-            pDatatype: pDatatype.as_mut_ptr() as *mut wchar_t,
-            pOutputFile: ptr::null_mut(),
+        let doc_info = DOC_INFO_1W {
+            pDocName: PWSTR(pDocName.as_mut_ptr()),
+            pDatatype: PWSTR(pDatatype.as_mut_ptr()),
+            pOutputFile: PWSTR::null(),
         };
 
-        let job_id = StartDocPrinterW(printer_handle.unwrap(), 1, &doc_info);
+        let job_id = StartDocPrinterW(printer_handle, 1, &doc_info);
         if job_id == 0 {
-            ClosePrinter(printer_handle.unwrap());
+            let _ = ClosePrinter(printer_handle);
             return Err("StartDocPrinterW failed");
         }
 
         for _ in 0..copies {
-            if StartPagePrinter(printer_handle.unwrap()) != 0 {
+            if StartPagePrinter(printer_handle) != BOOL::from(false) {
                 let mut bytes_written: c_ulong = 0;
-                WritePrinter(
-                    printer_handle.unwrap(),
+                let _ = WritePrinter(
+                    printer_handle,
                     buffer.as_ptr() as *mut c_void,
                     buffer.len() as c_ulong,
                     &mut bytes_written,
                 );
-                EndPagePrinter(printer_handle.unwrap());
+                let _ = EndPagePrinter(printer_handle);
             }
         }
 
-        EndDocPrinter(printer_handle.unwrap());
-        ClosePrinter(printer_handle.unwrap());
+        let _ = EndDocPrinter(printer_handle);
+        let _ = ClosePrinter(printer_handle);
 
         Ok(job_id as u64)
     }
@@ -235,49 +147,62 @@ pub fn print_buffer(
 /**
  * Retrieve print jobs of a specific printer with EnumJobsW
  */
-pub fn enum_printer_jobs(printer_name: &str) -> Result<&'static [JOB_INFO_1W], &'static str> {
-    let printer_handle = open_printer(printer_name);
-    if let Err(err) = printer_handle {
-        return Err(err);
+pub fn enum_printer_jobs(printer_name: &str) -> Result<Vec<PrinterJob>, &'static str> {
+    let printer_handle = open_printer(printer_name)?;
+    let printer_handle = PRINTER_HANDLE {
+        Value: printer_handle
+    };
+
+    let mut bytes_needed: u32 = 0;
+    let mut jobs_count: u32 = 0;
+
+    // First call to determine the required buffer size
+    let first_call_result = unsafe {
+        EnumJobsW(
+            printer_handle,
+            0,
+            0xFFFFFFFF,
+            1,
+            None,
+            &mut bytes_needed,
+            &mut jobs_count,
+        )
+    };
+
+    if first_call_result.is_err() || bytes_needed == 0 {
+        let _ = unsafe { ClosePrinter(printer_handle) };
+        return Ok(vec![]);
     }
 
-    let mut enum_result = 0;
-    let mut buffer_ptr: *mut JOB_INFO_1W = ptr::null_mut();
-    let mut jobs_count: c_ulong = 0;
-    let mut bytes_needed: c_ulong = 0;
+    // Allocate memory based on bytes_needed
+    let mut buffer = vec![0u8; bytes_needed as usize];
 
-    for _ in 0..2 {
-        enum_result = unsafe {
-            EnumJobsW(
-                printer_handle.unwrap(),
-                0,
-                0xFFFFFFFF,
-                1,
-                buffer_ptr as *mut c_void,
-                bytes_needed,
-                &mut bytes_needed,
-                &mut jobs_count,
-            )
-        };
+    // Second call to actually retrieve job info
+    let second_call_result = unsafe {
+        EnumJobsW(
+            printer_handle,
+            0,
+            0xFFFFFFFF,
+            1,
+            Some(buffer.as_mut()),
+            &mut bytes_needed,
+            &mut jobs_count,
+        )
+    };
 
-        if enum_result != 0 || bytes_needed == 0 {
-            break;
-        }
+    let _ = unsafe { ClosePrinter(printer_handle) };
 
-        buffer_ptr = alloc_s::<JOB_INFO_1W>(bytes_needed);
-    }
-
-    unsafe { ClosePrinter(printer_handle.unwrap()) };
-
-    if enum_result == 0 {
+    if second_call_result.is_err() {
         return Err("EnumJobsW failed");
     }
 
-    Ok(if jobs_count > 0 {
-        unsafe { slice::from_raw_parts(buffer_ptr as *const JOB_INFO_1W, jobs_count as usize) }
-    } else {
-        &[]
-    })
+    // Convert raw buffer into Vec<JOB_INFO_1W>
+    let jobs: &[JOB_INFO_1W] = unsafe {
+        slice::from_raw_parts(buffer.as_ptr() as *const JOB_INFO_1W, jobs_count as usize)
+    };
+
+    let jobs: Vec<PrinterJob> = jobs.iter().map(|job| PrinterJob::from_platform_printer_job_getters(job)).collect();
+    Ok(jobs)
 }
 
 /**
@@ -285,22 +210,22 @@ pub fn enum_printer_jobs(printer_name: &str) -> Result<&'static [JOB_INFO_1W], &
  */
 pub fn set_job_state(printer_name: &str, command: u64, job_id: u64) -> Result<(), &'static str> {
     unsafe {
-        let printer_handle = open_printer(printer_name);
-        if let Err(err) = printer_handle {
-            return Err(err);
-        }
+        let printer_handle = open_printer(printer_name)?;
+        let printer_handle = PRINTER_HANDLE {
+            Value: printer_handle
+        };
 
         let result = SetJobW(
-            printer_handle.unwrap(),
+            printer_handle,
             job_id as c_ulong,
             0,
-            ptr::null_mut(),
+            None,
             command as c_ulong,
         );
 
-        ClosePrinter(printer_handle.unwrap());
+        let _ = ClosePrinter(printer_handle);
 
-        if result == 0 {
+        if result == BOOL::from(false) {
             Err("SetJobW failed")
         } else {
             Ok(())
