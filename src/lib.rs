@@ -47,7 +47,7 @@ mod unix;
 mod windows;
 
 use common::{traits::platform::PlatformActions};
-pub use common::base::printer::Printer;
+pub use common::base::printer::{Printer, PrinterState};
 
 /**
  * Return all available printers on a system
