@@ -48,7 +48,7 @@ mod windows;
 
 use common::{traits::platform::{PlatformActions}};
 pub use common::base::printer::{Printer, PrinterState};
-pub use common::{traits::platform::DeviceCaps};
+pub use common::traits::platform::DeviceCaps;
 /**
  * Return all available printers on a system
  */
