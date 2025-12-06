@@ -55,6 +55,8 @@ impl PlatformActions for crate::Platform {
         buffer: DynamicImage,
         print_name: Option<&str>,
         page_count: u32,
+        print_width: Option<f64>,
+        print_height: Option<f64>,
     ) -> Result<u64, &'static str> {
         todo!()
     }

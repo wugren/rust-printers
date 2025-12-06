@@ -1,14 +1,16 @@
 use std::mem;
 use image::DynamicImage;
 use windows::core::{PCWSTR, PWSTR};
-use windows::Win32::Graphics::Gdi::{CreateCompatibleBitmap, CreateCompatibleDC, CreateDCW, DeleteDC, DeleteObject, GetDeviceCaps, SelectObject, SetDIBits, SetStretchBltMode, StretchBlt, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, HALFTONE, HGDIOBJ, HORZRES, PHYSICALOFFSETX, PHYSICALOFFSETY, RGBQUAD, SRCCOPY, VERTRES};
-use windows::Win32::Graphics::Printing::{ClosePrinter, EndDocPrinter, EndPagePrinter, OpenPrinterW, StartDocPrinterW, StartPagePrinter, DOC_INFO_1W, PRINTER_HANDLE};
+use windows::Win32::Graphics::Gdi::{CreateCompatibleBitmap, CreateCompatibleDC, CreateDCW, DeleteDC, DeleteObject, GetDeviceCaps, SelectObject, SetDIBits, SetStretchBltMode, StretchBlt, BITMAPINFO, BITMAPINFOHEADER, DEVMODEW, DIB_RGB_COLORS, DM_OUT_BUFFER, DM_PAPERLENGTH, DM_PAPERWIDTH, HALFTONE, HGDIOBJ, HORZRES, LOGPIXELSY, PHYSICALOFFSETX, PHYSICALOFFSETY, RGBQUAD, SRCCOPY, VERTRES};
+use windows::Win32::Graphics::Printing::{ClosePrinter, DocumentPropertiesW, EndDocPrinter, EndPagePrinter, OpenPrinterW, StartDocPrinterW, StartPagePrinter, DOC_INFO_1W, PRINTER_HANDLE};
 use windows::Win32::Storage::Xps::{EndDoc, EndPage, StartDocW, StartPage, DOCINFOW};
+use windows::Win32::UI::WindowsAndMessaging::IDOK;
 use crate::common::base::job::{PrinterJobOptions, PrinterJobState};
 use crate::common::base::printer::PrinterState;
 use crate::common::base::{job::PrinterJob, printer::Printer};
-use crate::common::traits::platform::{PlatformActions, PlatformPrinterGetters};
+use crate::common::traits::platform::{DeviceCaps, PlatformActions, PlatformPrinterGetters};
 use crate::windows::utils::strings::str_to_wide_string;
+use crate::windows::winspool::info::get_device_caps;
 
 mod utils;
 mod winspool;
@@ -16,6 +18,10 @@ mod winspool;
 impl PlatformActions for crate::Platform {
     fn get_printers() -> Vec<Printer> {
          winspool::info::enum_printers(None)
+    }
+
+    fn get_printer_caps(printer_system_name: &str) -> DeviceCaps {
+        get_device_caps(printer_system_name)
     }
 
     fn print(
@@ -49,6 +55,8 @@ impl PlatformActions for crate::Platform {
         image: DynamicImage,
         print_name: Option<&str>,
         page_count: u32,
+        print_width: Option<f64>,
+        print_height: Option<f64>,
     ) -> Result<u64, &'static str> {
         let printer_name_wide = str_to_wide_string(printer_system_name);
         let mut printer_handle = PRINTER_HANDLE::default();
@@ -65,10 +73,38 @@ impl PlatformActions for crate::Platform {
             return Err("Failed to open printer");
         }
 
+        // 将DynamicImage转换为BGRA格式
+        let rgba_image = image.to_rgba8();
+        let (img_width, img_height) = rgba_image.dimensions();
+
         // 创建设备上下文
         let device = str_to_wide_string("WINSPOOL");
         let hdc = unsafe {
-            CreateDCW(PCWSTR(device.as_ptr()), PCWSTR(printer_name_wide.as_ptr()), PCWSTR::null(), None)
+            if print_height.is_some() || print_width.is_some() {
+                let size_needed = DocumentPropertiesW(None, printer_handle, PCWSTR(printer_name_wide.as_ptr()), None, None, 0);
+                if size_needed <= 0 {
+                    return Err("Failed to get device mode size");
+                }
+                
+                let mut devmode_buffer = vec![0u8; size_needed as usize];
+                let devmode_ptr = devmode_buffer.as_mut_ptr() as *mut DEVMODEW;
+                let result = DocumentPropertiesW(None, printer_handle, PCWSTR(printer_name_wide.as_ptr()), Some(devmode_ptr), None, DM_OUT_BUFFER.0);
+                if result != IDOK.0 {
+                    return Err("Failed to get device mode");
+                }
+                let devmode = &mut *devmode_ptr;
+                if let Some(height) = print_height {
+                    devmode.dmFields = DM_PAPERLENGTH;
+                    devmode.Anonymous1.Anonymous1.dmPaperLength = (height * 10f64) as i16;
+                }
+                if let Some(width) = print_width {
+                    devmode.dmFields |= DM_PAPERWIDTH;
+                    devmode.Anonymous1.Anonymous1.dmPaperWidth = (width * 10f64) as i16;
+                }
+                CreateDCW(PCWSTR(device.as_ptr()), PCWSTR(printer_name_wide.as_ptr()), PCWSTR::null(), Some(devmode_ptr))
+            } else {
+                CreateDCW(PCWSTR(device.as_ptr()), PCWSTR(printer_name_wide.as_ptr()), PCWSTR::null(), None)
+            }
         };
 
         if hdc.is_invalid() {
@@ -107,10 +143,6 @@ impl PlatformActions for crate::Platform {
             unsafe {
                 let _ = StartPage(hdc);
             };
-
-            // 将DynamicImage转换为BGRA格式
-            let rgba_image = image.to_rgba8();
-            let (img_width, img_height) = rgba_image.dimensions();
 
             // 创建兼容的内存DC
             let mem_dc = unsafe { CreateCompatibleDC(Some(hdc)) };

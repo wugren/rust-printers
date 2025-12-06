@@ -1,12 +1,10 @@
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
 
-use libc::{c_int, c_uint, c_ulong, c_void, wchar_t};
 use std::{ptr, slice};
 use windows::core::{PCWSTR, PWSTR};
-use windows::Win32::Graphics::Gdi::{CreateDCW, DeleteDC, GetDeviceCaps, DEVMODEW, HORZRES, LOGPIXELSX, LOGPIXELSY, PHYSICALHEIGHT, PHYSICALOFFSETX, PHYSICALOFFSETY, PHYSICALWIDTH, VERTRES};
-use windows::Win32::Graphics::Printing::{EnumPrintersW, GetDefaultPrinterW, PRINTER_INFO_2W};
-use windows::Win32::Storage::Xps::{DeviceCapabilitiesW, DC_FIELDS, DC_ORIENTATION, DC_PAPERS, DC_SIZE, PRINTER_DEVICE_CAPABILITIES};
+use windows::Win32::Graphics::Gdi::{CreateDCW, DeleteDC, GetDeviceCaps, HORZRES, LOGPIXELSX, LOGPIXELSY, PHYSICALHEIGHT, PHYSICALOFFSETX, PHYSICALOFFSETY, PHYSICALWIDTH, VERTRES};
+use windows::Win32::Graphics::Printing::{EnumPrintersW, GetDefaultPrinterW, PRINTER_ENUM_CONNECTIONS, PRINTER_ENUM_LOCAL, PRINTER_INFO_2W};
 use crate::{
     common::traits::platform::PlatformPrinterGetters,
     windows::utils::{
@@ -20,15 +18,6 @@ use crate::common::traits::platform::DeviceCaps;
 impl PlatformPrinterGetters for PRINTER_INFO_2W {
     fn get_name(&self) -> String {
         wchar_t_to_string(self.pPrinterName)
-    }
-    fn get_is_default(&self) -> bool {
-        let mut name_size: c_ulong = 0;
-        unsafe {
-            GetDefaultPrinterW(None, &mut name_size);
-            let mut buffer: Vec<u16> = vec![0; name_size as usize];
-            GetDefaultPrinterW(Some(PWSTR(buffer.as_mut_ptr())), &mut name_size);
-            wchar_t_to_string(self.pPrinterName) == wchar_t_to_string(PWSTR(buffer.as_mut_ptr()))
-        }
     }
     fn get_system_name(&self) -> String {
         wchar_t_to_string(self.pPrinterName)
@@ -47,18 +36,6 @@ impl PlatformPrinterGetters for PRINTER_INFO_2W {
     }
     fn get_state(&self) -> u64 {
         self.Status as u64
-    }
-    fn get_port_name(&self) -> String {
-        wchar_t_to_string(self.pPortName)
-    }
-    fn get_processor(&self) -> String {
-        wchar_t_to_string(self.pPrintProcessor)
-    }
-    fn get_description(&self) -> String {
-        wchar_t_to_string(self.pComment)
-    }
-    fn get_data_type(&self) -> String {
-        wchar_t_to_string(self.pDatatype)
     }
     fn get_state_reasons(&self) -> Vec<String> {
         // NOTE: These reasons are virtual descriptions based on printer status
@@ -95,9 +72,17 @@ impl PlatformPrinterGetters for PRINTER_INFO_2W {
         .map(|v| v.1.to_string())
         .collect();
     }
-
-    fn get_device_caps(&self) -> DeviceCaps {
-        get_device_caps(self.get_name().as_str())
+    fn get_port_name(&self) -> String {
+        wchar_t_to_string(self.pPortName)
+    }
+    fn get_processor(&self) -> String {
+        wchar_t_to_string(self.pPrintProcessor)
+    }
+    fn get_description(&self) -> String {
+        wchar_t_to_string(self.pComment)
+    }
+    fn get_data_type(&self) -> String {
+        wchar_t_to_string(self.pDatatype)
     }
 }
 
@@ -119,7 +104,7 @@ pub fn get_device_caps(printer_name: &str) -> DeviceCaps {
         let margin_top = GetDeviceCaps(Some(hdc), PHYSICALOFFSETY);
         let margin_right = page_width - print_table_width - margin_left;
         let margin_bottom = page_height - print_table_height - margin_top;
-        DeleteDC(hdc);
+        let _ = DeleteDC(hdc);
         DeviceCaps {
             dpi_x,
             dpi_y,
@@ -151,7 +136,7 @@ pub fn enum_printers(name: Option<&str>) -> Vec<Printer> {
 
     let result = unsafe {
         EnumPrintersW(
-            0x00000002 | 0x00000004,
+            PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS,
             PCWSTR(name_ptr),
             2,
             None,

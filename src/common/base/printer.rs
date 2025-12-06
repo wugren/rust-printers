@@ -66,11 +66,6 @@ pub struct Printer {
     pub location: String,
 
     /**
-     * Definition if the printer is the default printer
-     */
-    pub is_default: bool,
-
-    /**
      * Definition if the printer is shared
      */
     pub is_shared: bool,
@@ -84,17 +79,6 @@ pub struct Printer {
      * The state reasons of the printer
      */
     pub state_reasons: Vec<String>,
-
-    pub dpi_x: i32,
-    pub dpi_y: i32,
-    pub page_width: i32,
-    pub page_height: i32,
-    pub print_table_width: i32,
-    pub print_table_height: i32,
-    pub margin_top: i32,
-    pub margin_left: i32,
-    pub margin_right: i32,
-    pub margin_bottom: i32,
 }
 
 impl Debug for Printer {
@@ -106,7 +90,6 @@ impl Debug for Printer {
                 \r  state: {:?},
                 \r  state_reasons: {:?},
                 \r  system_name: {:?},
-                \r  is_default: {:?},
                 \r  uri: {:?},
                 \r  port_name: {:?},
                 \r  is_shared: {:?},
@@ -115,16 +98,11 @@ impl Debug for Printer {
                 \r  processor: {:?}
                 \r  data_type: {:?}
                 \r  description: {:?}
-                \r  dpi_x: {}
-                \r  dpi_y: {}
-                \r  page_width: {}
-                \r  page_height: {}
             \r}}",
             self.name,
             self.state,
             self.state_reasons,
             self.system_name,
-            self.is_default,
             self.uri,
             self.port_name,
             self.is_shared,
@@ -133,10 +111,6 @@ impl Debug for Printer {
             self.processor,
             self.data_type,
             self.description,
-            self.dpi_x,
-            self.dpi_y,
-            self.page_width,
-            self.page_height,
         )
     }
 }
@@ -150,23 +124,12 @@ impl Clone for Printer {
             uri: self.uri.clone(),
             location: self.location.clone(),
             port_name: self.port_name.clone(),
-            is_default: self.is_default,
             system_name: self.system_name.clone(),
             driver_name: self.driver_name.clone(),
             is_shared: self.is_shared,
             data_type: self.data_type.clone(),
             description: self.description.clone(),
             processor: self.processor.clone(),
-            dpi_x: self.dpi_x,
-            dpi_y: self.dpi_y,
-            page_width: self.page_width,
-            page_height: self.page_height,
-            print_table_width: self.print_table_width,
-            print_table_height: self.print_table_height,
-            margin_top: self.margin_top,
-            margin_left: self.margin_left,
-            margin_right: self.margin_right,
-            margin_bottom: self.margin_bottom,
         }
     }
 }
@@ -181,7 +144,6 @@ impl Printer {
             state_reasons.push("none".to_string());
         }
 
-        let device_caps = platform_printer.get_device_caps();
         Printer {
             name: platform_printer.get_name(),
             system_name: platform_printer.get_system_name(),
@@ -189,7 +151,6 @@ impl Printer {
             location: platform_printer.get_location(),
             uri: platform_printer.get_uri(),
             port_name: platform_printer.get_port_name(),
-            is_default: platform_printer.get_is_default(),
             is_shared: platform_printer.get_is_shared(),
             data_type: platform_printer.get_data_type(),
             processor: platform_printer.get_processor(),
@@ -199,19 +160,13 @@ impl Printer {
                 state_reasons.join(",").as_str(),
             ),
             state_reasons,
-            dpi_x: device_caps.dpi_x,
-            dpi_y: device_caps.dpi_y,
-            page_width: device_caps.page_width,
-            page_height: device_caps.page_height,
-            print_table_width: device_caps.print_table_width,
-            print_table_height: device_caps.print_table_height,
-            margin_top: device_caps.margin_top,
-            margin_left: device_caps.margin_left,
-            margin_right: device_caps.margin_right,
-            margin_bottom: device_caps.margin_bottom,
         }
     }
 
+    pub fn get_printer_caps(&self) -> DeviceCaps {
+        crate::Platform::get_printer_caps(self.system_name.as_str())
+    }
+    
     /**
      * Print bytes
      */
@@ -234,11 +189,15 @@ impl Printer {
         &self,
         image: DynamicImage,
         print_name: Option<&str>,
-        page_count: u32,) -> Result<u64, &'static str> {
+        page_count: u32,
+        print_width: Option<f64>,
+        print_height: Option<f64>,) -> Result<u64, &'static str> {
         crate::Platform::print_image(self.system_name.as_str(),
                                      image,
                                      print_name,
-                                     page_count)
+                                     page_count,
+                                     print_width,
+                                     print_height)
     }
     /**
      * Return active jobs

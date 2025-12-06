@@ -5,7 +5,7 @@ use crate::common::base::{
 use std::time::SystemTime;
 use image::DynamicImage;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct DeviceCaps {
     pub dpi_x: i32,
     pub dpi_y: i32,
@@ -21,7 +21,6 @@ pub struct DeviceCaps {
 
 pub trait PlatformPrinterGetters {
     fn get_name(&self) -> String;
-    fn get_is_default(&self) -> bool;
     fn get_system_name(&self) -> String;
     fn get_marker_and_model(&self) -> String;
     fn get_is_shared(&self) -> bool;
@@ -33,7 +32,6 @@ pub trait PlatformPrinterGetters {
     fn get_processor(&self) -> String;
     fn get_description(&self) -> String;
     fn get_data_type(&self) -> String;
-    fn get_device_caps(&self) -> DeviceCaps;
 }
 
 pub trait PlatformPrinterJobGetters {
@@ -49,6 +47,8 @@ pub trait PlatformPrinterJobGetters {
 
 pub trait PlatformActions {
     fn get_printers() -> Vec<Printer>;
+
+    fn get_printer_caps(printer_system_name: &str) -> DeviceCaps;
     fn print(
         printer_system_name: &str,
         buffer: &[u8],
@@ -64,6 +64,8 @@ pub trait PlatformActions {
         buffer: DynamicImage,
         print_name: Option<&str>,
         page_count: u32,
+        print_width: Option<f64>,
+        print_height: Option<f64>,
     ) -> Result<u64, &'static str>;
     fn get_printer_jobs(
         printer_name: &str,
