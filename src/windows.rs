@@ -1,7 +1,7 @@
 use std::mem;
 use image::DynamicImage;
 use windows::core::{PCWSTR, PWSTR};
-use windows::Win32::Graphics::Gdi::{CreateCompatibleBitmap, CreateCompatibleDC, CreateDCW, DeleteDC, DeleteObject, GetDeviceCaps, SelectObject, SetDIBits, SetStretchBltMode, StretchBlt, BITMAPINFO, BITMAPINFOHEADER, DEVMODEW, DIB_RGB_COLORS, DM_OUT_BUFFER, DM_PAPERLENGTH, DM_PAPERWIDTH, HALFTONE, HGDIOBJ, HORZRES, LOGPIXELSY, PHYSICALOFFSETX, PHYSICALOFFSETY, RGBQUAD, SRCCOPY, VERTRES};
+use windows::Win32::Graphics::Gdi::{CreateCompatibleBitmap, CreateCompatibleDC, CreateDCW, DeleteDC, DeleteObject, GetDeviceCaps, SelectObject, SetDIBits, SetStretchBltMode, StretchBlt, BITMAPINFO, BITMAPINFOHEADER, DEVMODEW, DIB_RGB_COLORS, DMPAPER_USER, DM_IN_BUFFER, DM_OUT_BUFFER, DM_PAPERLENGTH, DM_PAPERSIZE, DM_PAPERWIDTH, HALFTONE, HGDIOBJ, HORZRES, LOGPIXELSY, PHYSICALOFFSETX, PHYSICALOFFSETY, RGBQUAD, SRCCOPY, VERTRES};
 use windows::Win32::Graphics::Printing::{ClosePrinter, DocumentPropertiesW, EndDocPrinter, EndPagePrinter, OpenPrinterW, StartDocPrinterW, StartPagePrinter, DOC_INFO_1W, PRINTER_HANDLE};
 use windows::Win32::Storage::Xps::{EndDoc, EndPage, StartDocW, StartPage, DOCINFOW};
 use windows::Win32::UI::WindowsAndMessaging::IDOK;
@@ -93,14 +93,20 @@ impl PlatformActions for crate::Platform {
                     return Err("Failed to get device mode");
                 }
                 let devmode = &mut *devmode_ptr;
+                devmode.Anonymous1.Anonymous1.dmPaperSize = DMPAPER_USER as i16;
+                devmode.dmFields |= DM_PAPERSIZE;
                 if let Some(height) = print_height {
-                    devmode.dmFields = DM_PAPERLENGTH;
+                    devmode.dmFields |= DM_PAPERLENGTH;
                     devmode.Anonymous1.Anonymous1.dmPaperLength = (height * 10f64) as i16;
                 }
                 if let Some(width) = print_width {
                     devmode.dmFields |= DM_PAPERWIDTH;
                     devmode.Anonymous1.Anonymous1.dmPaperWidth = (width * 10f64) as i16;
                 }
+                // let result = DocumentPropertiesW(None, printer_handle, PCWSTR(printer_name_wide.as_ptr()), Some(devmode_ptr), None, DM_OUT_BUFFER.0 | DM_IN_BUFFER.0);
+                // if result != IDOK.0 {
+                //     return Err("Failed to get device mode");
+                // }
                 CreateDCW(PCWSTR(device.as_ptr()), PCWSTR(printer_name_wide.as_ptr()), PCWSTR::null(), Some(devmode_ptr))
             } else {
                 CreateDCW(PCWSTR(device.as_ptr()), PCWSTR(printer_name_wide.as_ptr()), PCWSTR::null(), None)
