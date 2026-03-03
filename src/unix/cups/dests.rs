@@ -58,15 +58,19 @@ impl CupsDestT {
 
         value
     }
+
+    pub(crate) fn get_option_value(&self, key: &str) -> String {
+        self.get_option(key)
+    }
+    
+    pub fn get_is_default(&self) -> bool {
+        self.is_default == 1
+    }
 }
 
 impl PlatformPrinterGetters for CupsDestT {
     fn get_name(&self) -> String {
         self.get_option("printer-info").trim().to_string()
-    }
-
-    fn get_is_default(&self) -> bool {
-        self.is_default == 1
     }
 
     fn get_system_name(&self) -> String {
