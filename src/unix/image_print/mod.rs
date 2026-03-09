@@ -43,7 +43,7 @@ pub fn print_image(
     Err("Unsupported unix platform")
 }
 
-fn image_to_png_bytes(image: DynamicImage) -> Result<Vec<u8>, &'static str> {
+fn image_to_png_bytes(image: &DynamicImage) -> Result<Vec<u8>, &'static str> {
     let mut bytes = Vec::new();
     let mut cursor = Cursor::new(&mut bytes);
 

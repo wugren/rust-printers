@@ -13,7 +13,7 @@ pub fn print_image(
     print_width: Option<f64>,
     print_height: Option<f64>,
 ) -> Result<u64, &'static str> {
-    let image_bytes = super::image_to_png_bytes(image)?;
+    let image_bytes = super::image_to_png_bytes(&image)?;
     let copies = super::normalize_page_count(page_count).to_string();
 
     let mut owned_options = vec![
