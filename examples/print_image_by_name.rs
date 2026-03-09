@@ -60,8 +60,8 @@ fn main() {
         image,
         Some("Rust image print job"),
         1,
-        Some(print_width),
-        Some(print_height),
+        None,
+        None,
     ) {
         Ok(job_id) => println!("Image print submitted, job_id={job_id}"),
         Err(err) => eprintln!("Failed to print image: {err}"),

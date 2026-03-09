@@ -5,6 +5,9 @@ use crate::common::{
     traits::platform::{PlatformActions, PlatformPrinterGetters},
 };
 
+const DEFAULT_DPI: i32 = 300;
+const MM_PER_INCH: f64 = 25.4;
+
 pub fn print_image(
     printer_system_name: &str,
     image: DynamicImage,
@@ -13,17 +16,16 @@ pub fn print_image(
     print_width: Option<f64>,
     print_height: Option<f64>,
 ) -> Result<u64, &'static str> {
+    let printer_dpi = query_printer_dpi(printer_system_name);
+    let printer_resolution = printer_dpi.map(format_resolution);
+
     let png_bytes = super::image_to_png_bytes(&image)?;
     let png_path = crate::unix::utils::file::save_tmp_file_with_ext(&png_bytes, "png")
         .ok_or("Failed to create temp file")?;
     let png_path = png_path.to_str().ok_or("Failed to create temp file path")?;
 
     let copies = super::normalize_page_count(page_count).to_string();
-    let custom_media = match (print_width, print_height) {
-        (Some(width), Some(height)) => super::media_custom_mm(width, height),
-        _ => None,
-    };
-    let printer_resolution = query_printer_resolution(printer_system_name);
+    let custom_media = resolve_custom_media(&image, print_width, print_height, printer_dpi);
 
     let mut last_error = "Failed to print image";
 
@@ -78,7 +80,10 @@ fn build_print_options(
     document_format: Option<&str>,
     printer_resolution: Option<&str>,
 ) -> Vec<(String, String)> {
-    let mut options = vec![(String::from("copies"), copies.to_owned())];
+    let mut options = vec![
+        (String::from("copies"), copies.to_owned()),
+        (String::from("job-hold-until"), String::from("no-hold")),
+    ];
 
     if let Some(resolution) = printer_resolution {
         options.push((String::from("printer-resolution"), String::from(resolution)));
@@ -117,20 +122,20 @@ fn print_file_with_options(
     )
 }
 
-fn query_printer_resolution(printer_system_name: &str) -> Option<String> {
+fn query_printer_dpi(printer_system_name: &str) -> Option<(i32, i32)> {
     let dests = crate::unix::cups::dests::get_dests().unwrap_or_default();
     let resolution = dests
         .iter()
         .find(|dest| {
             dest.get_name() == printer_system_name || dest.get_system_name() == printer_system_name
         })
-        .and_then(query_dest_resolution);
+        .and_then(query_dest_dpi);
 
     crate::unix::cups::dests::free(dests);
-    resolution.map(format_resolution)
+    resolution
 }
 
-fn query_dest_resolution(dest: &crate::unix::cups::dests::CupsDestT) -> Option<(i32, i32)> {
+fn query_dest_dpi(dest: &crate::unix::cups::dests::CupsDestT) -> Option<(i32, i32)> {
     if let Some(resolution) = crate::unix::cups::attrs::query_printer_dpi(dest) {
         return Some(resolution);
     }
@@ -148,6 +153,39 @@ fn query_dest_resolution(dest: &crate::unix::cups::dests::CupsDestT) -> Option<(
     }
 
     None
+}
+
+fn resolve_custom_media(
+    image: &DynamicImage,
+    print_width: Option<f64>,
+    print_height: Option<f64>,
+    printer_dpi: Option<(i32, i32)>,
+) -> Option<String> {
+    let width_height = match (print_width, print_height) {
+        (Some(width), Some(height)) => Some((width, height)),
+        (Some(width), None) => {
+            let ratio = image.height() as f64 / image.width().max(1) as f64;
+            Some((width, width * ratio))
+        }
+        (None, Some(height)) => {
+            let ratio = image.width() as f64 / image.height().max(1) as f64;
+            Some((height * ratio, height))
+        }
+        (None, None) => {
+            let (dpi_x, dpi_y) = printer_dpi.unwrap_or((DEFAULT_DPI, DEFAULT_DPI));
+            Some((
+                px_to_mm(image.width(), dpi_x),
+                px_to_mm(image.height(), dpi_y),
+            ))
+        }
+    };
+
+    width_height.and_then(|(width, height)| super::media_custom_mm(width, height))
+}
+
+fn px_to_mm(px: u32, dpi: i32) -> f64 {
+    let dpi = if dpi > 0 { dpi } else { DEFAULT_DPI };
+    (px as f64 / dpi as f64) * MM_PER_INCH
 }
 
 fn format_resolution((x, y): (i32, i32)) -> String {
