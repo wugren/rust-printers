@@ -33,3 +33,7 @@ windows = { version = "0.62", features = [
     "Win32_Graphics_Printing",
     "Win32_Security",
 ] }
+
+[dev-dependencies]
+sfo-log = "0.1"
+log = "0.4"

@@ -1,7 +1,7 @@
 use std::mem;
 use image::DynamicImage;
 use windows::core::{PCWSTR, PWSTR};
-use windows::Win32::Graphics::Gdi::{CreateCompatibleBitmap, CreateCompatibleDC, CreateDCW, DeleteDC, DeleteObject, GetDeviceCaps, SelectObject, SetDIBits, SetStretchBltMode, StretchBlt, BITMAPINFO, BITMAPINFOHEADER, DEVMODEW, DIB_RGB_COLORS, DMPAPER_USER, DM_IN_BUFFER, DM_OUT_BUFFER, DM_PAPERLENGTH, DM_PAPERSIZE, DM_PAPERWIDTH, HALFTONE, HGDIOBJ, HORZRES, LOGPIXELSY, PHYSICALOFFSETX, PHYSICALOFFSETY, RGBQUAD, SRCCOPY, VERTRES};
+use windows::Win32::Graphics::Gdi::{BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreateDCW, DeleteDC, DeleteObject, GetDeviceCaps, SelectObject, SetDIBits, SetStretchBltMode, StretchBlt, BITMAPINFO, BITMAPINFOHEADER, DEVMODEW, DIB_RGB_COLORS, DMPAPER_USER, DM_IN_BUFFER, DM_OUT_BUFFER, DM_PAPERLENGTH, DM_PAPERSIZE, DM_PAPERWIDTH, HALFTONE, HGDIOBJ, HORZRES, LOGPIXELSY, PHYSICALOFFSETX, PHYSICALOFFSETY, RGBQUAD, SRCCOPY, VERTRES};
 use windows::Win32::Graphics::Printing::{ClosePrinter, DocumentPropertiesW, EndDocPrinter, EndPagePrinter, OpenPrinterW, StartDocPrinterW, StartPagePrinter, DOC_INFO_1W, PRINTER_HANDLE};
 use windows::Win32::Storage::Xps::{EndDoc, EndPage, StartDocW, StartPage, DOCINFOW};
 use windows::Win32::UI::WindowsAndMessaging::IDOK;
@@ -88,7 +88,7 @@ impl PlatformActions for crate::Platform {
                 
                 let mut devmode_buffer = vec![0u8; size_needed as usize];
                 let devmode_ptr = devmode_buffer.as_mut_ptr() as *mut DEVMODEW;
-                let result = DocumentPropertiesW(None, printer_handle, PCWSTR(printer_name_wide.as_ptr()), Some(devmode_ptr), None, DM_OUT_BUFFER.0);
+                let result = DocumentPropertiesW(None, printer_handle, PCWSTR(printer_name_wide.as_ptr()), Some(devmode_ptr), Some(devmode_ptr), DM_OUT_BUFFER.0 | DM_IN_BUFFER.0);
                 if result != IDOK.0 {
                     return Err("Failed to get device mode");
                 }
@@ -229,11 +229,11 @@ impl PlatformActions for crate::Platform {
             let y_pos = 0; // 置顶
 
             // 设置拉伸模式
-            unsafe { SetStretchBltMode(hdc, HALFTONE) };
+            // unsafe { SetStretchBltMode(hdc, HALFTONE) };
 
             // 绘制图像到打印机DC
-            let stretch_result = unsafe {
-                StretchBlt(
+            let result = unsafe {
+                BitBlt(
                     hdc,
                     x_pos,
                     y_pos,
@@ -242,13 +242,11 @@ impl PlatformActions for crate::Platform {
                     Some(mem_dc),
                     0,
                     0,
-                    img_width as i32,
-                    img_height as i32,
                     SRCCOPY,
                 )
             };
 
-            if !stretch_result.as_bool() {
+            if !result.is_ok() {
                 unsafe {
                     SelectObject(mem_dc, old_bitmap);
                     let _ = DeleteObject(HGDIOBJ::from(bitmap));
@@ -258,7 +256,7 @@ impl PlatformActions for crate::Platform {
                     let _ = DeleteDC(hdc);
                     let _ = ClosePrinter(printer_handle);
                 }
-                return Err("Failed to stretch blit image");
+                return Err("Failed to blit image");
             }
             unsafe {
                 SelectObject(mem_dc, old_bitmap);
