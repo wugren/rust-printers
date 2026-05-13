@@ -11,12 +11,12 @@ fn main() {
         log::info!("{:?}", printer);
         let caps = printer.get_printer_caps();
         log::info!("{:?}", caps);
-        if printer.name == "JK-402A" {
-            let image = ImageReader::open("C:\\work\\rust-printers\\cover_1765814682178_20251216000441A096.png").unwrap();
+        if printer.name == "LABEL" {
+            let image = ImageReader::open("cover_1765814682178_20251216000441A096.png").unwrap();
             let image = image.decode().unwrap();
-            let print_height = image.height() as f64 / 8f64 * 10f64;
+            let print_height = image.height() as f64 / 8f64;
             let print_width = image.width() as f64 / 8f64;
-            let _ = printer.print_image(image.clone(), None, 1, None, Some(print_height));
+            let _ = printer.print_image(image.clone(), None, 1, Some(print_width), Some(print_height));
         }
     }
 }

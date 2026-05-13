@@ -88,7 +88,7 @@ impl PlatformActions for crate::Platform {
                 
                 let mut devmode_buffer = vec![0u8; size_needed as usize];
                 let devmode_ptr = devmode_buffer.as_mut_ptr() as *mut DEVMODEW;
-                let result = DocumentPropertiesW(None, printer_handle, PCWSTR(printer_name_wide.as_ptr()), Some(devmode_ptr), Some(devmode_ptr), DM_OUT_BUFFER.0 | DM_IN_BUFFER.0);
+                let result = DocumentPropertiesW(None, printer_handle, PCWSTR(printer_name_wide.as_ptr()), Some(devmode_ptr), None, DM_OUT_BUFFER.0);
                 if result != IDOK.0 {
                     return Err("Failed to get device mode");
                 }
